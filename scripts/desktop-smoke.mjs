@@ -22,7 +22,9 @@ async function quitFromApp(app, page) {
   const exited = new Promise(resolve => child.once('exit', resolve))
   // Use exactly the same preload/IPC route as the user's Quit button. Closing
   // Playwright's debugger context can deadlock after a relaunch on ARM macOS.
-  await page.evaluate(() => window.horipet.quit()).catch(() => {})
+  // A renderer destroyed during quit may never return the evaluate reply. The
+  // process exit, not that debugger reply, is the shutdown completion signal.
+  void page.evaluate(() => window.horipet.quit()).catch(() => {})
   let deadline
   try {
     await Promise.race([exited, new Promise((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('Application did not exit after its Quit action')), 10000) })])
@@ -213,3 +215,7 @@ try {
   await writeFile(join(output, 'desktop-smoke.json'), JSON.stringify(results, null, 2))
   console.log(`Evidence: ${output}`)
 }
+// All app checks and the observed process-exit deadline above have completed.
+// Dispose a possibly lingering Playwright transport without keeping the CLI
+// alive. This exits only the Node test driver, never marks forced app cleanup PASS.
+process.exit(process.exitCode || 0)
