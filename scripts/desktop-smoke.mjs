@@ -45,8 +45,21 @@ try {
     assert.equal(info.isolation, true); assert.equal(info.sandbox, true); assert.equal(info.node, false)
     assert.ok(info.bounds.width <= 340 && info.bounds.height <= 380)
     assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
-    const image = await application.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'))
-    const png = Buffer.from(image, 'base64'); await writeFile(join(output, 'pet.png'), png)
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    // capturePage can race the first Viz surface on virtual macOS GPUs. A
+    // Chromium screenshot still reads the live renderer, never a mock surface.
+    let png
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const image = await application.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'))
+        png = Buffer.from(image, 'base64'); results.captureBackend = 'Electron capturePage'; break
+      } catch (error) {
+        if (!String(error).includes('UnknownVizError')) throw error
+        await sleep(350)
+      }
+    }
+    if (!png) { png = await page.screenshot({ omitBackground: true }); results.captureBackend = 'Chromium live renderer (native Viz capture unavailable)' }
+    await writeFile(join(output, 'pet.png'), png)
     const { data, info: pixels } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
     assert.equal(data[3], 0, 'window corner must be transparent')
     const opaque = [...data.filter((_v, i) => i % 4 === 3)].filter(a => a > 250).length

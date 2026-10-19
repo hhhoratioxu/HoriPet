@@ -11,6 +11,6 @@ export default defineConfig({
   renderer: {
     root: 'src/renderer',
     plugins: [react()],
-    build: { rollupOptions: { input: resolve('src/renderer/index.html') } }
+    build: { minify: true, rollupOptions: { input: resolve('src/renderer/index.html') } }
   }
 })
