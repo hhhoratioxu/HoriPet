@@ -41,3 +41,4 @@ for await (const command of createInterface({ input: process.stdin })) {
   } catch (error) { console.error(String(error)) }
 }
 await app.close()
+process.stdin.pause()

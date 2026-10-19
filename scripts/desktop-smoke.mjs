@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import sharp from 'sharp'
+import { verifyNativeInput } from './native-input.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(process.env.HORIPET_EVIDENCE || join(root, 'test-results', `${process.platform}-${process.arch}`))
@@ -83,6 +84,9 @@ try {
     })
     assert.equal(inside, true)
   })
+  if (process.platform === 'win32' || process.env.HORIPET_MOUSE_DRIVER) {
+    await verifyNativeInput(application, page, output, check)
+  }
   await check('Preferences open, live changes apply, and closing keeps the pet alive', async () => {
     const waiting = application.waitForEvent('window')
     await page.evaluate(() => window.horipet.openSettings())
