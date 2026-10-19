@@ -30,7 +30,7 @@ export function Settings() {
       {snapshot.platform !== 'darwin' && <button onClick={() => window.horipet.closeSettings()} aria-label={t.close}><Icon name="close" size={17}/></button>}
     </div>
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark"><Icon name="paw" size={25}/></span><div><b>HoriPet<span>®</span></b><small>{t.tagline}</small></div></div>
+      <div className="brand"><span className="brand-mark"><Icon name="paw" size={25}/></span><div><b>HoriPet<span>✦</span></b><small>{t.tagline}</small></div></div>
       <nav>{nav.map(item => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)} data-testid={`nav-${item.id}`}><Icon name={item.icon}/><span>{t[item.id]}</span>{tab === item.id && <i/>}</button>)}</nav>
       <div className="sidebar-bottom"><div className="local-label"><i/><span>LOCAL & LOVED</span></div><p>{t.privacyText.split('。')[0]?.split('. ')[0]}</p><small>HoriPet {snapshot.version}</small></div>
     </aside>

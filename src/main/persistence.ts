@@ -35,7 +35,8 @@ export class LocalStore {
       mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 })
       const temp = `${this.path}.tmp`
       writeFileSync(temp, JSON.stringify(this.latest, null, 2), { mode: 0o600 })
-      const fd = openSync(temp, 'r')
+      // FlushFileBuffers on Windows requires a writable handle.
+      const fd = openSync(temp, 'r+')
       try { fsyncSync(fd) } finally { closeSync(fd) }
       // Only rotate a parseable backup: a corrupt primary must not replace a good backup.
       if (existsSync(this.path)) {

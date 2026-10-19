@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { PetState, Skin } from '../../shared/types'
 import './cat.css'
 export const COATS: Record<Skin, { top: string; bottom: string; line: string; ear: string; collar: string }> = {
@@ -10,8 +10,19 @@ export function Cat({ state = 'idle', skin = 'snow', facing = 1, speed = 1, lowP
   state?: PetState; skin?: Skin; facing?: -1 | 1; speed?: number; lowPower?: boolean; label?: string
 }) {
   const id = useId().replace(/:/g, ''), coat = COATS[skin]
+  const [blinking, setBlinking] = useState(false)
   const closed = state === 'sleep' || state === 'happy' || state === 'touch'
-  return <svg className={`cat state-${state} ${lowPower ? 'cat-low-power' : ''}`} data-state={state} viewBox="0 0 260 290" role="img" aria-label={label}
+  useEffect(() => {
+    if (closed || lowPower) { setBlinking(false); return }
+    let timer: ReturnType<typeof setTimeout>, release: ReturnType<typeof setTimeout>
+    const schedule = () => { timer = setTimeout(() => {
+      setBlinking(true)
+      release = setTimeout(() => { setBlinking(false); schedule() }, 140)
+    }, 2200 + Math.random() * 5800) }
+    schedule()
+    return () => { clearTimeout(timer); clearTimeout(release) }
+  }, [closed, lowPower])
+  return <svg className={`cat state-${state} ${lowPower ? 'cat-low-power' : ''} ${blinking ? 'is-blinking' : ''}`} data-state={state} viewBox="0 0 260 290" role="img" aria-label={label}
     style={{ '--tempo': 1 / speed } as React.CSSProperties}>
     <defs>
       <linearGradient id={`${id}fur`} x1="20%" y1="0%" x2="80%" y2="100%">

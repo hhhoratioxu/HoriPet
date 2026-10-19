@@ -1,13 +1,13 @@
 import { _electron as electron } from '@playwright/test'
 import assert from 'node:assert/strict'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import sharp from 'sharp'
 
 const root = resolve(import.meta.dirname, '..')
 const output = resolve(process.env.HORIPET_EVIDENCE || join(root, 'test-results', `${process.platform}-${process.arch}`))
-const profile = resolve(process.env.HORIPET_SMOKE_PROFILE || join(root, '.test-profile-smoke'))
+const profile = process.env.HORIPET_SMOKE_PROFILE ? resolve(process.env.HORIPET_SMOKE_PROFILE) : await mkdtemp(join(root, '.test-profile-smoke-'))
 await mkdir(output, { recursive: true }); await mkdir(profile, { recursive: true })
 const executablePath = process.env.HORIPET_APP
 const results = { platform: process.platform, arch: process.arch, packaged: !!executablePath, timestamp: new Date().toISOString(), checks: [], errors: [] }
@@ -38,7 +38,9 @@ try {
       const w = BrowserWindow.getAllWindows()[0], prefs = w.webContents.getLastWebPreferences()
       return { color: w.getBackgroundColor(), focusable: w.isFocusable(), bounds: w.getBounds(), isolation: prefs.contextIsolation, sandbox: prefs.sandbox, node: prefs.nodeIntegration }
     })
-    assert.equal(info.color, '#00000000'); assert.equal(info.focusable, false)
+    // Electron's getter returns RGB on some platforms, dropping alpha. Verify
+    // actual composited pixel alpha below rather than inferring it from this getter.
+    assert.match(info.color, /^#000000(?:00)?$/); assert.equal(info.focusable, false)
     assert.equal(info.isolation, true); assert.equal(info.sandbox, true); assert.equal(info.node, false)
     assert.ok(info.bounds.width <= 340 && info.bounds.height <= 380)
     assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
@@ -87,6 +89,7 @@ try {
     const settings = await waiting
     settings.on('pageerror', e => results.errors.push(e.message))
     await settings.waitForSelector('[data-testid="settings-main"]')
+    await sleep(350)
     await settings.screenshot({ path: join(output, 'settings-dark.png') })
     await settings.getByTestId('nav-preferences').click()
     await settings.getByRole('button', { name: '浅色', exact: true }).click()
@@ -95,6 +98,8 @@ try {
     await settings.getByRole('button', { name: 'Peach milk', exact: true }).click()
     const input = settings.getByLabel('A name to call home', { exact: true })
     await input.fill('Mochi Test'); await input.press('Enter')
+    await settings.evaluate(() => { document.querySelector('.settings-main').scrollTop = 0 })
+    await sleep(350)
     await settings.screenshot({ path: join(output, 'settings-light-en.png') })
     const data = await page.evaluate(() => window.horipet.getSnapshot())
     assert.equal(data.settings.skin, 'peach'); assert.equal(data.settings.locale, 'en'); assert.equal(data.settings.theme, 'light'); assert.equal(data.settings.name, 'Mochi Test')

@@ -23,10 +23,8 @@ mac:
   icon: resources/icon.icns
   identity: null
   target:
-    - target: dmg
-      arch: [arm64, x64]
-    - target: zip
-      arch: [arm64, x64]
+    - dmg
+    - zip
 dmg:
   title: HoriPet
   window: { width: 540, height: 380 }
@@ -37,10 +35,8 @@ win:
   icon: resources/icon.ico
   executableName: HoriPet
   target:
-    - target: nsis
-      arch: [x64, arm64]
-    - target: portable
-      arch: [x64, arm64]
+    - nsis
+    - portable
 nsis:
   oneClick: false
   perMachine: false
