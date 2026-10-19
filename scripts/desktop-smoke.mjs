@@ -68,9 +68,12 @@ try {
   await check('Click and double-click produce a real state transition', async () => {
     const size = await page.evaluate(async () => (await window.horipet.getSnapshot()).settings.size)
     await page.mouse.click(size * .49, size * .58)
+    await sleep(350)
     await page.waitForFunction(async () => ['touch', 'happy'].includes((await window.horipet.getSnapshot()).behavior.state))
+    await sleep(300)
     await page.mouse.dblclick(size * .49, size * .58)
-    await page.waitForFunction(async () => (await window.horipet.getSnapshot()).behavior.state === 'happy')
+    await sleep(350)
+    await page.waitForFunction(async () => { const s = await window.horipet.getSnapshot(); return s.behavior.state === 'happy' && s.behavior.bubble === 'love' })
   })
   await check('Feeding, manual sleep and waking work through secure IPC', async () => {
     const before = await page.evaluate(() => window.horipet.getSnapshot())
@@ -133,14 +136,24 @@ try {
     await page.context().setOffline(false)
   })
   await check('Normal quit flushes data and leaves no live Electron child processes', async () => {
-    const descendants = process.platform === 'win32' ? [] : execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).trim().split(/\s+/).filter(Boolean).map(Number)
+    let processes
+    if (process.platform === 'win32') {
+      const raw = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress'], { encoding: 'utf8' })
+      processes = JSON.parse(raw).map(p => ({ pid: p.ProcessId, parent: p.ParentProcessId }))
+    } else {
+      processes = execFileSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' }).trim().split('\n').map(line => { const [id, parent] = line.trim().split(/\s+/).map(Number); return { pid: id, parent } })
+    }
+    const descendants = new Set([pid])
+    let added = true
+    while (added) { added = false; for (const p of processes) if (descendants.has(p.parent) && !descendants.has(p.pid)) { descendants.add(p.pid); added = true } }
     await application.close(); application = undefined
     await sleep(700)
-    for (const p of [pid, ...descendants]) {
+    for (const p of descendants) {
       let alive = true
       try { process.kill(p, 0) } catch { alive = false }
       assert.equal(alive, false, `process ${p} survived quit`)
     }
+    results.processCleanup = { checkedCount: descendants.size, allExited: true }
     const saved = JSON.parse(await readFile(join(profile, 'companion.json'), 'utf8'))
     assert.equal(saved.settings.name, 'Mochi Test')
   })
