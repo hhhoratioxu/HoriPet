@@ -14,8 +14,20 @@ const executablePath = process.env.HORIPET_APP
 const results = { platform: process.platform, arch: process.arch, packaged: !!executablePath, timestamp: new Date().toISOString(), checks: [], errors: [] }
 const env = { ...process.env, HORIPET_PROFILE: profile }
 delete env.ELECTRON_RUN_AS_NODE
-let application
+let application, activePage
 const sleep = ms => new Promise(r => setTimeout(r, ms))
+async function quitFromApp(app, page) {
+  const child = app.process()
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const exited = new Promise(resolve => child.once('exit', resolve))
+  // Use exactly the same preload/IPC route as the user's Quit button. Closing
+  // Playwright's debugger context can deadlock after a relaunch on ARM macOS.
+  await page.evaluate(() => window.horipet.quit()).catch(() => {})
+  let deadline
+  try {
+    await Promise.race([exited, new Promise((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('Application did not exit after its Quit action')), 10000) })])
+  } finally { clearTimeout(deadline) }
+}
 async function check(name, run) {
   console.log(`CHECK ${name}`)
   let deadline
@@ -39,7 +51,7 @@ async function launch() {
   return { app, page }
 }
 try {
-  let launched = await launch(); application = launched.app; let page = launched.page
+  let launched = await launch(); application = launched.app; let page = launched.page; activePage = page
   const pid = application.process().pid
   await check('First launch renders a real Electron companion', async () => {
     assert.equal(await page.locator('.cat').count(), 1)
@@ -169,7 +181,7 @@ try {
     const descendants = new Set([pid])
     let added = true
     while (added) { added = false; for (const p of processes) if (descendants.has(p.parent) && !descendants.has(p.pid)) { descendants.add(p.pid); added = true } }
-    await application.close(); application = undefined
+    await quitFromApp(application, page); application = undefined
     await sleep(700)
     for (const p of descendants) {
       let alive = true
@@ -180,7 +192,7 @@ try {
     const saved = JSON.parse(await readFile(join(profile, 'companion.json'), 'utf8'))
     assert.equal(saved.settings.name, 'Mochi Test')
   })
-  launched = await launch(); application = launched.app; page = launched.page
+  launched = await launch(); application = launched.app; page = launched.page; activePage = page
   await check('Relaunch restores settings, pet data and a safe saved position', async () => {
     const data = await page.evaluate(() => window.horipet.getSnapshot())
     assert.equal(data.settings.name, 'Mochi Test'); assert.equal(data.settings.skin, 'peach'); assert.equal(data.settings.locale, 'en')
@@ -191,7 +203,13 @@ try {
 } catch (error) {
   results.failure = String(error.stack || error); console.error(error); process.exitCode = 1
 } finally {
-  if (application) await application.close().catch(() => {})
+  if (application) {
+    try { await quitFromApp(application, activePage); results.relaunchQuit = true }
+    catch (error) {
+      results.shutdownFailure = String(error); process.exitCode = 1
+      application.process().kill()
+    }
+  }
   await writeFile(join(output, 'desktop-smoke.json'), JSON.stringify(results, null, 2))
   console.log(`Evidence: ${output}`)
 }
