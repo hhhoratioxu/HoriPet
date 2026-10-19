@@ -7,6 +7,8 @@ HoriPet 是真正运行在桌面上的 Electron 宠物应用，支持 macOS 和 
 
 这是 **0.1.0 未签名预览版**。功能实现、构建成功、自动化桌面检查和人工设备验收是不同的验证层，具体见 [验证记录](docs/VALIDATION.md)。不要将构建成功理解为所有系统及硬件都已经人工验证。
 
+![HoriPet 实际 Electron 设置界面](docs/images/preferences-dark.png)
+
 ## 能做什么
 
 - 原创白猫、蜜桃牛奶和小小雨云三套皮肤；待机、行走、奔跑、睡觉、醒来、开心、抚摸、拖动、吃东西、鼠标跟随十种互斥状态。
@@ -56,6 +58,8 @@ pnpm test:desktop     # 在当前系统上实际启动 Electron 做桌面自动�
 ```
 
 `test:desktop` 使用独立 `.test-profile-smoke`，不会覆盖正常存档。报告和截图保存在 `test-results/<platform>-<arch>/`，不包含在消费者安装包中。需要可用的图形桌面会话。
+
+Windows 桌面检查包括真实系统鼠标输入。Mac 的原生鼠标测试需要用户明确授权后编译并指定 `scripts/native-mouse.swift` 生成的驱动（`HORIPET_MOUSE_DRIVER`）；普通测试不会尝试获取辅助功能权限。`scripts/profile-idle.mjs` 可对真实运行的应用做短时资源采样。实际测试结果和 Electron 内存开销已记录在验证文档中。
 
 ## 构建安装包
 

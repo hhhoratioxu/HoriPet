@@ -2,6 +2,19 @@
 
 This record is updated as checks are actually completed. Build success, automated application checks and native device acceptance are separate layers.
 
+## Local delivery evidence, 2026-10-19
+
+- Host: macOS 27.2 (26B5112a), Apple Silicon ARM64, Retina desktop.
+- 42/42 Vitest checks and TypeScript/production build passed.
+- Both ARM64 and Intel DMG + ZIP were built locally with electron-builder 26.15.3 and Electron 44.9.0. Signing was explicitly skipped.
+- The ARM64 DMG passed image checksum validation, was mounted read-only and installed to the user's Applications folder. The mounted payload, installed payload and unpacked build had identical `app.asar` SHA256: `8c15b9819c3eca333ae54a23a2a3897a2aae171372c1585f36c6ffa716a0ac31`.
+- The **installed** ARM64 app passed 14/14 live desktop checks. Four of these used explicitly authorized CGEvent OS input: transparent-corner click-through to a separate underlying window, cat clicks without changing the underlying keyboard focus, native drag by -95/-65 DIP, and cursor following with automatic return to idle.
+- Normal quit was checked against the parent and all three observed descendants; all four processes exited. Restart restored the edited settings, skin, name, statistics and saved position.
+- A native right-click menu was separately observed in the macOS UI after a real CGEvent right-click on the installed cat. It contained care actions, movement toggles, recovery, preferences and quit; Escape dismissed it.
+- The local report and snapshots are in `test-results/installed-macos-arm64/`. Representative UI captures are committed in `docs/images/`; full transient test profiles are ignored and never packaged.
+
+An idle sample with the installed app, one visible cat, preferences closed and autonomous movement/following disabled used 5 seconds of warmup and a 10-second observation. Electron reported a summed process CPU figure of approximately **4.2%**, and summed working sets of approximately **432 MiB**. Working-set sums include shared pages more than once; this is not a measurement of unique physical memory. This short automated sample is not a battery or long-duration benchmark. Electron carries a material runtime memory and download-size cost, even for a small character. The release does not claim native-app-level memory usage.
+
 ## Automated logic
 
 42 Vitest checks cover bounded settings and corrupt inputs, offline time progression, mutually exclusive behavior priorities, drag interruption, waking, autonomous naps, cursor-follow exit, work-area clamping with negative/missing monitors, scale-independent hit regions, atomic persistence, backup recovery, immediate quit flush and the optional offline AI contract.
@@ -13,6 +26,10 @@ TypeScript checking and the production Electron/Vite build are executed before p
 `scripts/desktop-smoke.mjs` launches a real Electron app with an isolated local profile. It checks first visible render, native transparent window color, alpha pixels, focusability, sandbox, click/double-click transitions, care actions, input rejection, hide/show/recovery, preferences and immediate settings, settings-close lifetime, offline operation, process termination and persistence across a real restart.
 
 Playwright-delivered mouse events exercise the live renderer and IPC. They **do not alone establish native OS mouse delivery, native drag movement or transparent-region click-through**. Those require separate OS input checks. Captured PNG alpha proves the rendered surface, not every external compositor or graphics driver.
+
+Windows x64 adds genuine OS input using `SetCursorPos` and `SendInput` in the Windows runner; all four native checks passed in [run 39216699472](https://github.com/hhhoratioxu/HoriPet/actions/runs/39216699472/job/117942224524). That runner also passed 14 desktop checks with the packaged EXE. These are Windows hosted-runner results, not physical Windows 10/11 device acceptance. Final release-run evidence is attached to the matching tagged workflow run.
+
+On virtual macOS GPUs, native `capturePage` can return `UnknownVizError` before a capture surface is available. The test retries a bounded number of times, then records an explicit live Chromium-renderer capture fallback if needed. It does not wait indefinitely on animation frames that an occluded virtual window is allowed to suspend. The capture method is included in the JSON report, so it is not confused with physical compositor acceptance.
 
 ## Platform acceptance boundaries
 

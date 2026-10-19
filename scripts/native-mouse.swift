@@ -7,10 +7,15 @@ let args = Array(CommandLine.arguments.dropFirst())
 guard args.count >= 3, let x = Double(args[1]), let y = Double(args[2]) else { exit(2) }
 func post(_ kind: CGEventType, _ x: Double, _ y: Double) {
     CGEvent(mouseEventSource: nil, mouseType: kind,
-            mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: .left)?.post(tap: .cghidEventTap)
+            mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: (kind == .rightMouseDown || kind == .rightMouseUp) ? .right : .left)?.post(tap: .cghidEventTap)
 }
 post(.mouseMoved, x, y)
 Thread.sleep(forTimeInterval: 0.25)
+if args[0] == "right" {
+    post(.rightMouseDown, x, y)
+    Thread.sleep(forTimeInterval: 0.08)
+    post(.rightMouseUp, x, y)
+}
 if args[0] == "click" || args[0] == "drag" {
     post(.leftMouseDown, x, y)
     Thread.sleep(forTimeInterval: 0.08)

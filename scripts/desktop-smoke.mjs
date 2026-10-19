@@ -45,7 +45,9 @@ try {
     assert.equal(info.isolation, true); assert.equal(info.sandbox, true); assert.equal(info.node, false)
     assert.ok(info.bounds.width <= 340 && info.bounds.height <= 380)
     assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    // Do not wait on requestAnimationFrame: a virtual desktop can occlude a
+    // non-focusable window and legitimately suspend its animation callbacks.
+    await sleep(200)
     // capturePage can race the first Viz surface on virtual macOS GPUs. A
     // Chromium screenshot still reads the live renderer, never a mock surface.
     let png
