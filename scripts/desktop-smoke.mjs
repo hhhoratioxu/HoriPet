@@ -1,0 +1,139 @@
+import { _electron as electron } from '@playwright/test'
+import assert from 'node:assert/strict'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { resolve, join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import sharp from 'sharp'
+
+const root = resolve(import.meta.dirname, '..')
+const output = resolve(process.env.HORIPET_EVIDENCE || join(root, 'test-results', `${process.platform}-${process.arch}`))
+const profile = resolve(process.env.HORIPET_SMOKE_PROFILE || join(root, '.test-profile-smoke'))
+await mkdir(output, { recursive: true }); await mkdir(profile, { recursive: true })
+const executablePath = process.env.HORIPET_APP
+const results = { platform: process.platform, arch: process.arch, packaged: !!executablePath, timestamp: new Date().toISOString(), checks: [], errors: [] }
+const env = { ...process.env, HORIPET_PROFILE: profile }
+delete env.ELECTRON_RUN_AS_NODE
+let application
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+async function check(name, run) {
+  await run(); results.checks.push({ name, passed: true }); console.log(`PASS ${name}`)
+}
+async function launch() {
+  const app = await electron.launch({ ...(executablePath ? { executablePath, args: [] } : { args: [root] }), env, timeout: 60000 })
+  const page = await app.firstWindow()
+  await page.waitForSelector('[data-testid="pet-surface"]', { timeout: 30000 })
+  page.on('pageerror', e => results.errors.push(e.message))
+  return { app, page }
+}
+try {
+  let launched = await launch(); application = launched.app; let page = launched.page
+  const pid = application.process().pid
+  await check('First launch renders a real Electron companion', async () => {
+    assert.equal(await page.locator('.cat').count(), 1)
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true)
+  })
+  await page.evaluate(() => window.horipet.updateSettings({ autonomous: false, followMouse: false, visible: true, theme: 'dark', locale: 'zh-CN', name: 'Mochi' }))
+  await check('Transparent frameless compact window, focus and renderer sandbox', async () => {
+    const info = await application.evaluate(({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows()[0], prefs = w.webContents.getLastWebPreferences()
+      return { color: w.getBackgroundColor(), focusable: w.isFocusable(), bounds: w.getBounds(), isolation: prefs.contextIsolation, sandbox: prefs.sandbox, node: prefs.nodeIntegration }
+    })
+    assert.equal(info.color, '#00000000'); assert.equal(info.focusable, false)
+    assert.equal(info.isolation, true); assert.equal(info.sandbox, true); assert.equal(info.node, false)
+    assert.ok(info.bounds.width <= 340 && info.bounds.height <= 380)
+    assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
+    const image = await application.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'))
+    const png = Buffer.from(image, 'base64'); await writeFile(join(output, 'pet.png'), png)
+    const { data, info: pixels } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    assert.equal(data[3], 0, 'window corner must be transparent')
+    const opaque = [...data.filter((_v, i) => i % 4 === 3)].filter(a => a > 250).length
+    assert.ok(opaque > pixels.width * pixels.height * .12, 'the cat must actually be visible')
+  })
+  await check('Click and double-click produce a real state transition', async () => {
+    const size = await page.evaluate(async () => (await window.horipet.getSnapshot()).settings.size)
+    await page.mouse.click(size * .49, size * .58)
+    await page.waitForFunction(async () => ['touch', 'happy'].includes((await window.horipet.getSnapshot()).behavior.state))
+    await page.mouse.dblclick(size * .49, size * .58)
+    await page.waitForFunction(async () => (await window.horipet.getSnapshot()).behavior.state === 'happy')
+  })
+  await check('Feeding, manual sleep and waking work through secure IPC', async () => {
+    const before = await page.evaluate(() => window.horipet.getSnapshot())
+    await page.evaluate(() => window.horipet.action('feed'))
+    const fed = await page.evaluate(() => window.horipet.getSnapshot())
+    assert.ok(fed.pet.hunger < before.pet.hunger); assert.equal(fed.behavior.state, 'eat')
+    await page.evaluate(() => window.horipet.action('sleep'))
+    assert.equal((await page.evaluate(() => window.horipet.getSnapshot())).behavior.state, 'sleep')
+    await page.evaluate(() => window.horipet.action('wake'))
+    assert.equal((await page.evaluate(() => window.horipet.getSnapshot())).behavior.state, 'wake')
+  })
+  await check('Invalid settings and arbitrary actions are rejected', async () => {
+    assert.equal(await page.evaluate(async () => { try { await window.horipet.updateSettings({ size: -100 }); return false } catch { return true } }), true)
+    assert.equal(await page.evaluate(async () => { try { await window.horipet.action('arbitrary-file-write'); return false } catch { return true } }), true)
+  })
+  await check('Pet can be hidden, shown and recovered into a screen work area', async () => {
+    await page.evaluate(() => window.horipet.action('hide'))
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false)
+    await page.evaluate(() => window.horipet.action('reset-position'))
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true)
+    const inside = await application.evaluate(({ BrowserWindow, screen }) => {
+      const b = BrowserWindow.getAllWindows()[0].getBounds()
+      return screen.getAllDisplays().some(({ workArea: a }) => b.x >= a.x && b.y >= a.y && b.x + b.width <= a.x + a.width && b.y + b.height <= a.y + a.height)
+    })
+    assert.equal(inside, true)
+  })
+  await check('Preferences open, live changes apply, and closing keeps the pet alive', async () => {
+    const waiting = application.waitForEvent('window')
+    await page.evaluate(() => window.horipet.openSettings())
+    const settings = await waiting
+    settings.on('pageerror', e => results.errors.push(e.message))
+    await settings.waitForSelector('[data-testid="settings-main"]')
+    await settings.screenshot({ path: join(output, 'settings-dark.png') })
+    await settings.getByTestId('nav-preferences').click()
+    await settings.getByRole('button', { name: '浅色', exact: true }).click()
+    await settings.getByLabel('界面语言', { exact: true }).selectOption('en')
+    await settings.getByTestId('nav-companion').click()
+    await settings.getByRole('button', { name: 'Peach milk', exact: true }).click()
+    const input = settings.getByLabel('A name to call home', { exact: true })
+    await input.fill('Mochi Test'); await input.press('Enter')
+    await settings.screenshot({ path: join(output, 'settings-light-en.png') })
+    const data = await page.evaluate(() => window.horipet.getSnapshot())
+    assert.equal(data.settings.skin, 'peach'); assert.equal(data.settings.locale, 'en'); assert.equal(data.settings.theme, 'light'); assert.equal(data.settings.name, 'Mochi Test')
+    await settings.evaluate(() => window.horipet.closeSettings())
+    await sleep(250)
+    assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
+    assert.equal(await page.locator('.cat').count(), 1)
+  })
+  await check('Core functionality works with the renderer offline', async () => {
+    await page.context().setOffline(true)
+    await page.reload(); await page.waitForSelector('.cat')
+    await page.evaluate(() => window.horipet.action('pet'))
+    assert.ok(['happy', 'touch'].includes((await page.evaluate(() => window.horipet.getSnapshot())).behavior.state))
+    await page.context().setOffline(false)
+  })
+  await check('Normal quit flushes data and leaves no live Electron child processes', async () => {
+    const descendants = process.platform === 'win32' ? [] : execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).trim().split(/\s+/).filter(Boolean).map(Number)
+    await application.close(); application = undefined
+    await sleep(700)
+    for (const p of [pid, ...descendants]) {
+      let alive = true
+      try { process.kill(p, 0) } catch { alive = false }
+      assert.equal(alive, false, `process ${p} survived quit`)
+    }
+    const saved = JSON.parse(await readFile(join(profile, 'companion.json'), 'utf8'))
+    assert.equal(saved.settings.name, 'Mochi Test')
+  })
+  launched = await launch(); application = launched.app; page = launched.page
+  await check('Relaunch restores settings, pet data and a safe saved position', async () => {
+    const data = await page.evaluate(() => window.horipet.getSnapshot())
+    assert.equal(data.settings.name, 'Mochi Test'); assert.equal(data.settings.skin, 'peach'); assert.equal(data.settings.locale, 'en')
+    const saved = JSON.parse(await readFile(join(profile, 'companion.json'), 'utf8'))
+    assert.ok(saved.position && Number.isFinite(saved.position.x))
+  })
+  assert.deepEqual(results.errors, [], 'renderer must not report errors')
+} catch (error) {
+  results.failure = String(error.stack || error); console.error(error); process.exitCode = 1
+} finally {
+  if (application) await application.close().catch(() => {})
+  await writeFile(join(output, 'desktop-smoke.json'), JSON.stringify(results, null, 2))
+  console.log(`Evidence: ${output}`)
+}
