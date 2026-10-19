@@ -31,6 +31,8 @@ Windows x64 adds genuine OS input using `SetCursorPos` and `SendInput` in the Wi
 
 On virtual macOS GPUs, native `capturePage` can return `UnknownVizError` before a capture surface is available. The test retries a bounded number of times, then records an explicit live Chromium-renderer capture fallback if needed. It does not wait indefinitely on animation frames that an occluded virtual window is allowed to suspend. The capture method is included in the JSON report, so it is not confused with physical compositor acceptance.
 
+Hosted macOS desktop tests explicitly disable background throttling on their test windows to prevent an occluded, non-focusable window from suspending test callbacks. This is recorded in the report. Production defaults and the locally installed CGEvent acceptance keep normal background throttling enabled; CI therefore makes no claim about real idle power consumption.
+
 ## Platform acceptance boundaries
 
 - macOS Apple Silicon: local native application checks and installer verification are performed during delivery; the evidence report specifies completed checks.

@@ -64,7 +64,7 @@ export async function verifyNativeInput(app, page, output, check) {
     await check('Native OS click reaches the cat without stealing keyboard focus', async () => {
       const before = await clicks()
       mouse('click', center.x, center.y)
-      await page.waitForFunction(async () => ['touch', 'happy'].includes((await window.horipet.getSnapshot()).behavior.state), { timeout: 5000 })
+      await page.waitForFunction(async () => ['touch', 'happy'].includes((await window.horipet.getSnapshot()).behavior.state), null, { polling: 100, timeout: 5000 })
       assert.equal(await clicks(), before)
       assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.id), helperId)
       report.checks.push('cat reacts, underlying click count unchanged, keyboard focus retained')

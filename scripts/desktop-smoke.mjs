@@ -17,11 +17,23 @@ delete env.ELECTRON_RUN_AS_NODE
 let application
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 async function check(name, run) {
-  await run(); results.checks.push({ name, passed: true }); console.log(`PASS ${name}`)
+  console.log(`CHECK ${name}`)
+  let deadline
+  try {
+    await Promise.race([run(), new Promise((_resolve, reject) => { deadline = setTimeout(() => reject(new Error(`Desktop check timed out: ${name}`)), 30000) })])
+    results.checks.push({ name, passed: true }); console.log(`PASS ${name}`)
+  } finally { clearTimeout(deadline) }
 }
 async function launch() {
   const app = await electron.launch({ ...(executablePath ? { executablePath, args: [] } : { args: [root] }), env, timeout: 60000 })
   const page = await app.firstWindow()
+  page.setDefaultTimeout(15000)
+  if (process.env.CI && process.platform === 'darwin') {
+    // Hosted macOS desktops can mark a non-focusable pet as occluded. Keep the
+    // test renderer awake; the shipped app retains normal power throttling.
+    await app.evaluate(({ BrowserWindow }) => { for (const w of BrowserWindow.getAllWindows()) w.webContents.setBackgroundThrottling(false) })
+    results.ciRendering = 'Background throttling disabled for hosted-macOS test windows only'
+  }
   await page.waitForSelector('[data-testid="pet-surface"]', { timeout: 30000 })
   page.on('pageerror', e => results.errors.push(e.message))
   return { app, page }
@@ -53,7 +65,15 @@ try {
     let png
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const image = await application.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'))
+        const image = await application.evaluate(async ({ BrowserWindow }) => {
+          let deadline
+          try {
+            return await Promise.race([
+              BrowserWindow.getAllWindows()[0].webContents.capturePage().then(image => image.toPNG().toString('base64')),
+              new Promise((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('UnknownVizError: surface capture timed out')), 2500) })
+            ])
+          } finally { clearTimeout(deadline) }
+        })
         png = Buffer.from(image, 'base64'); results.captureBackend = 'Electron capturePage'; break
       } catch (error) {
         if (!String(error).includes('UnknownVizError')) throw error
@@ -71,11 +91,11 @@ try {
     const size = await page.evaluate(async () => (await window.horipet.getSnapshot()).settings.size)
     await page.mouse.click(size * .49, size * .58)
     await sleep(350)
-    await page.waitForFunction(async () => ['touch', 'happy'].includes((await window.horipet.getSnapshot()).behavior.state))
+    await page.waitForFunction(async () => ['touch', 'happy'].includes((await window.horipet.getSnapshot()).behavior.state), null, { polling: 100, timeout: 5000 })
     await sleep(300)
     await page.mouse.dblclick(size * .49, size * .58)
     await sleep(350)
-    await page.waitForFunction(async () => { const s = await window.horipet.getSnapshot(); return s.behavior.state === 'happy' && s.behavior.bubble === 'love' })
+    await page.waitForFunction(async () => { const s = await window.horipet.getSnapshot(); return s.behavior.state === 'happy' && s.behavior.bubble === 'love' }, null, { polling: 100, timeout: 5000 })
   })
   await check('Feeding, manual sleep and waking work through secure IPC', async () => {
     const before = await page.evaluate(() => window.horipet.getSnapshot())
@@ -109,6 +129,7 @@ try {
     const waiting = application.waitForEvent('window')
     await page.evaluate(() => window.horipet.openSettings())
     const settings = await waiting
+    settings.setDefaultTimeout(15000)
     settings.on('pageerror', e => results.errors.push(e.message))
     await settings.waitForSelector('[data-testid="settings-main"]')
     await sleep(350)
