@@ -33,7 +33,7 @@ On virtual macOS GPUs, native `capturePage` can return `UnknownVizError` before 
 
 Hosted macOS desktop tests explicitly disable background throttling on their test windows to prevent an occluded, non-focusable window from suspending test callbacks. This is recorded in the report. Production defaults and the locally installed CGEvent acceptance keep normal background throttling enabled; CI therefore makes no claim about real idle power consumption.
 
-Quit acceptance uses the application's actual preload/IPC Quit action, with a ten-second exit deadline and observed child-process termination. It does not use Playwright's debugger-context shutdown as the application acceptance criterion: that driver shutdown stalled after a successful ARM macOS relaunch in earlier CI attempts. A deadline failure fails the test and triggers cleanup; forced cleanup is never recorded as a passed quit check.
+Quit acceptance uses the application's actual preload/IPC Quit action, with a ten-second exit deadline and observed child-process termination. It does not use Playwright's debugger-context shutdown as the application acceptance criterion. The deadline exposed an ARM macOS tray-only termination edge in earlier CI candidates. The app now flushes durable state, stops its timers, removes the tray and explicitly exits Electron rather than waiting for Cocoa activation/termination callbacks. Legitimate Quit IPC is still source-validated but never rate-limited. A deadline failure fails the test and triggers cleanup; forced test-driver cleanup is never recorded as a passed quit check.
 
 ## Platform acceptance boundaries
 

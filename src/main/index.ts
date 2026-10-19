@@ -49,6 +49,10 @@ else {
     quitting = true
     controller?.stop()
     tray?.destroy()
+    // All durable state is flushed and our timers are stopped. A tray-only,
+    // non-focusable macOS app must not wait on Cocoa activation/termination
+    // callbacks to finish; exit closes Electron's windows and child processes.
+    app.exit(0)
   })
   app.whenReady().then(async () => {
     if (process.platform === 'win32') app.setAppUserModelId('com.horipet.desktop')
